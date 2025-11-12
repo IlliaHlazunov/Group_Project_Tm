@@ -7,8 +7,8 @@
 #include <stdlib.h>
 
 #define WINDOW_TITLE "03 Ver. with window color button"
-#define SCREEN_WIDTH 350
-#define SCREEN_HEIGHT 350
+#define SCREEN_WIDTH 300
+#define SCREEN_HEIGHT 300
 #define IMAGE_FLAGS IMG_INIT_PNG
 
 struct Game {
@@ -190,3 +190,4 @@ int main(void) {
     game_cleanup(&game, EXIT_SUCCESS);
     return 0;
 }
+
