@@ -10,32 +10,42 @@
 #define WIN_W 300
 #define WIN_H 300
 
-// Глобальні змінні 
-SDL_Window *window = NULL;
-SDL_Renderer *renderer = NULL;
+// координати вікна 
+#define WINDOW_POS_X 150
+#define WINDOW_POS_Y 0
 
-SDL_Texture *texMap = NULL;
-SDL_Texture *texCat = NULL;
-SDL_Texture *texFish = NULL;
+// змінні для вікна і рендера
+SDL_Window *window;
+SDL_Renderer *renderer;
+
+// картинки
+SDL_Texture *texMap;
+SDL_Texture *texCat;
+SDL_Texture *texFish;
+SDL_Texture *texWindow;
 SDL_Texture *bgLayers[4];
 
-TTF_Font *fontSmall = NULL;
-TTF_Font *fontBig = NULL;
-TTF_Font *fontTitle = NULL;
+// шрифти
+TTF_Font *fontSmall;
+TTF_Font *fontBig;
+TTF_Font *fontTitle;
 
+// розміри картинок
 int fishW = 0, fishH = 0;
 int catW = 0, catH = 0;
+int winW = 0, winH = 0;
 
-// Структури
+// структура риби
 typedef struct {
     float x, y;
     float vx, vy;
     double angle, rotSpeed;
     float scale;
-    Uint8 alpha; // Прозорість для туману
+    Uint8 alpha;
     SDL_Color color;
 } Fish;
 
+// зони на карті
 typedef struct {
     int x, y;
     int workTime;
@@ -46,22 +56,29 @@ typedef struct {
 Fish fishes[30];
 Zone zones[3];
 
-// Змінні гри
-int scene = 0; // 0 = MENU, 1 = MAP, 2 = TIMER
+// стан гри
+int scene = 0; // 0 меню, 1 карта, 2 таймер
 bool isRunning = true;
 Uint32 timerStart = 0;
 int totalSeconds = 0;
 bool isResting = false;
 int currentZone = 0;
 
-// Анімація
+// чи відкрито вікно
+bool isWindowOpen = false; 
+
+// анімація
 int bgFrame = 0;
 int bgSheet = 0;
 int charFrame = 0;
+int winFrame = 0;
+
+// таймери для анімації
 Uint32 lastBgTime = 0;
 Uint32 lastCharTime = 0;
+Uint32 lastWinTime = 0;
 
-// Функція для тексту
+// функція щоб малювати текст
 void renderText(TTF_Font *font, const char *text, int x, int y, SDL_Color color) {
     if (!font) return;
     SDL_Surface *surf = TTF_RenderUTF8_Blended(font, text, color);
@@ -74,49 +91,44 @@ void renderText(TTF_Font *font, const char *text, int x, int y, SDL_Color color)
     }
 }
 
-// --- ОСЬ ТУТ МАГІЯ ТУМАНУ ПОВЕРНУТА ---
+// скидаємо позицію риби
 void reset_fish_pos(int i, bool randomY) {
     int layer = rand() % 100;
 
-    // Логіка шарів: Далеко -> Середньо -> Близько
+    // тут роблю туман 
     if (layer < 50) { 
-        // ШАР 1: ДАЛЕКО (Сильний туман)
-        // Маленькі, повільні і дуже прозорі (зливаються з фоном)
         fishes[i].scale = 0.15f + (rand() % 15) / 100.0f;
         fishes[i].alpha = 80 + rand() % 50; 
         fishes[i].vy = 0.2f + (rand() % 20) / 100.0f;
     } else if (layer < 85) {
-        // ШАР 2: СЕРЕДНЄ
         fishes[i].scale = 0.35f + (rand() % 20) / 100.0f;
         fishes[i].alpha = 160 + rand() % 50;
         fishes[i].vy = 0.5f + (rand() % 30) / 100.0f;
     } else {
-        // ШАР 3: БЛИЗЬКО 
         fishes[i].scale = 0.6f + (rand() % 20) / 100.0f;
-        fishes[i].alpha = 255; // Непрозорі
+        fishes[i].alpha = 255; 
         fishes[i].vy = 0.9f + (rand() % 50) / 100.0f;
     }
     
-    // Кольори 
+    // кольори риб
     int type = rand() % 3;
-    if (type == 0) fishes[i].color = (SDL_Color){255, 255, 255, 255};      // Срібна
-    else if (type == 1) fishes[i].color = (SDL_Color){100, 120, 180, 255}; // Темна
-    else fishes[i].color = (SDL_Color){150, 200, 150, 255};                // Зелена
+    if (type == 0) fishes[i].color = (SDL_Color){255, 255, 255, 255};      
+    else if (type == 1) fishes[i].color = (SDL_Color){100, 120, 180, 255}; 
+    else fishes[i].color = (SDL_Color){150, 200, 150, 255};                
 
     int w = (int)(fishW * fishes[i].scale);
     int h = (int)(fishH * fishes[i].scale);
     
     fishes[i].x = rand() % (WIN_W + w) - w;
-    
     if (randomY) fishes[i].y = rand() % WIN_H - WIN_H;
-    else fishes[i].y = -h - (rand() % 100); // Трохи вище екрану
+    else fishes[i].y = -h - (rand() % 100); 
     
     fishes[i].vx = ((rand() % 20) - 10) / 40.0f;
     fishes[i].angle = rand() % 360;
     fishes[i].rotSpeed = ((rand() % 10) - 5) * 0.1f;
 }
 
-// Ініціалізація
+// тут ініціалізація всього
 int init() {
     if (SDL_Init(SDL_INIT_VIDEO) < 0) return 0;
     if (!(IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG)) return 0;
@@ -128,7 +140,7 @@ int init() {
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer) return 0;
 
-    // Шрифти
+    // грузимо шрифти
     fontSmall = TTF_OpenFont("assets/OpenSans-Regular.ttf", 12);
     if (!fontSmall) fontSmall = TTF_OpenFont("C:\\Windows\\Fonts\\arial.ttf", 12);
     
@@ -138,16 +150,27 @@ int init() {
     fontTitle = TTF_OpenFont("assets/OpenSans-Regular.ttf", 32);
     if (!fontTitle) fontTitle = TTF_OpenFont("C:\\Windows\\Fonts\\arialbd.ttf", 32);
 
-    // Текстури
+    // грузимо текстури
     texMap = IMG_LoadTexture(renderer, "assets/karta.png");
     texCat = IMG_LoadTexture(renderer, "assets/characterAn.png");
     texFish = IMG_LoadTexture(renderer, "assets/fish.png");
+    
+    texWindow = IMG_LoadTexture(renderer, "window.png");
+    if (!texWindow) {
+        texWindow = IMG_LoadTexture(renderer, "assets/window.png");
+    }
 
-    // Для прозорості риб
+    if (texWindow) {
+        SDL_QueryTexture(texWindow, NULL, NULL, &winW, &winH);
+        printf("WINDOW LOADED! Size: %dx%d\n", winW, winH);
+    } else {
+        printf("ERROR: Window texture missing! Put 'window.png' next to exe or in assets.\n");
+    }
+
     SDL_SetTextureBlendMode(texFish, SDL_BLENDMODE_BLEND);
 
-    SDL_QueryTexture(texFish, NULL, NULL, &fishW, &fishH);
-    SDL_QueryTexture(texCat, NULL, NULL, &catW, &catH);
+    if(texFish) SDL_QueryTexture(texFish, NULL, NULL, &fishW, &fishH);
+    if(texCat) SDL_QueryTexture(texCat, NULL, NULL, &catW, &catH);
 
     for (int i = 0; i < 4; i++) {
         char path[64];
@@ -158,14 +181,18 @@ int init() {
     return 1;
 }
 
+// чистимо память
 void cleanup() {
-    for (int i = 0; i < 4; i++) SDL_DestroyTexture(bgLayers[i]);
-    SDL_DestroyTexture(texCat);
-    SDL_DestroyTexture(texMap);
-    SDL_DestroyTexture(texFish);
-    TTF_CloseFont(fontSmall);
-    TTF_CloseFont(fontBig);
-    TTF_CloseFont(fontTitle);
+    for (int i = 0; i < 4; i++) if(bgLayers[i]) SDL_DestroyTexture(bgLayers[i]);
+    if(texCat) SDL_DestroyTexture(texCat);
+    if(texMap) SDL_DestroyTexture(texMap);
+    if(texFish) SDL_DestroyTexture(texFish);
+    if(texWindow) SDL_DestroyTexture(texWindow);
+    
+    if(fontSmall) TTF_CloseFont(fontSmall);
+    if(fontBig) TTF_CloseFont(fontBig);
+    if(fontTitle) TTF_CloseFont(fontTitle);
+    
     SDL_DestroyRenderer(renderer);
     SDL_DestroyWindow(window);
     IMG_Quit();
@@ -180,12 +207,11 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Зони
     zones[0] = (Zone){245, 50, 0, 0, {185, 30, 70, 45}};
     zones[1] = (Zone){58, 230, 0, 0, {35, 200, 70, 45}};
     zones[2] = (Zone){237, 240, 0, 0, {195, 210, 70, 45}};
 
-    // Рандомний час
+    // рандомний час
     for (int i = 0; i < 3; i++) {
         int val;
         int unique = 0;
@@ -200,7 +226,6 @@ int main(int argc, char *argv[]) {
         zones[i].restTime = val / 2;
     }
 
-    // Спавн риб
     for (int i = 0; i < 30; i++) {
         reset_fish_pos(i, true);
     }
@@ -209,21 +234,21 @@ int main(int argc, char *argv[]) {
     Uint32 frameStart;
     int frameTime;
 
+    // головний цикл
     while (isRunning) {
         frameStart = SDL_GetTicks();
 
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) isRunning = false;
 
-            if (scene == 0) { // MENU
+            if (scene == 0) { 
                 if (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN) {
                     scene = 1;
-                    // Скидаю прозорість, щоб на інших екранах (якщо треба) було ок
                     SDL_SetTextureColorMod(texFish, 255, 255, 255);
                     SDL_SetTextureAlphaMod(texFish, 255);
                 }
             }
-            else if (scene == 1) { // MAP
+            else if (scene == 1) { 
                 if (e.type == SDL_MOUSEBUTTONDOWN) {
                     SDL_Point m = {e.button.x, e.button.y};
                     for (int i = 0; i < 3; i++) {
@@ -237,7 +262,29 @@ int main(int argc, char *argv[]) {
                     }
                 }
             }
-            else if (scene == 2) { // TIMER
+            else if (scene == 2) { 
+                // клік по вікну
+                if (e.type == SDL_MOUSEBUTTONDOWN) {
+                    SDL_Point click = {e.button.x, e.button.y};
+                    
+                    int frameH = winH / 6;
+                    
+                    // зменшення зони кліку
+                    int hitboxShrink = 15; 
+                    
+                    SDL_Rect winHitbox = {
+                        WINDOW_POS_X + hitboxShrink, 
+                        WINDOW_POS_Y + hitboxShrink, 
+                        winW - (hitboxShrink * 2), 
+                        frameH - (hitboxShrink * 2)
+                    };
+                    
+                    if (SDL_PointInRect(&click, &winHitbox)) {
+                        isWindowOpen = !isWindowOpen;
+                        printf("Window toggled. Open: %d\n", isWindowOpen);
+                    }
+                }
+
                 if (e.type == SDL_KEYDOWN && e.key.keysym.sym == SDLK_c) {
                     const Uint8 *keys = SDL_GetKeyboardState(NULL);
                     if (keys[SDL_SCANCODE_SPACE]) {
@@ -249,33 +296,27 @@ int main(int argc, char *argv[]) {
 
         SDL_RenderClear(renderer);
 
-        // --- МАЛЮВАННЯ 
-        
+        // малююю меню
         if (scene == 0) {
-            // Фон меню (блакитний)
             SDL_SetRenderDrawColor(renderer, 135, 206, 250, 255);
             SDL_RenderFillRect(renderer, NULL);
 
-            // риби рибок з ефектом туману
             for (int i = 0; i < 30; i++) {
                 fishes[i].x += fishes[i].vx;
                 fishes[i].y += fishes[i].vy;
                 fishes[i].angle += fishes[i].rotSpeed;
 
                 int fh = (int)(fishH * fishes[i].scale);
-                // Якщо вилетіла за екран - респавн зверху
                 if (fishes[i].y > WIN_H + fh) reset_fish_pos(i, false);
 
                 SDL_Rect r = {(int)fishes[i].x, (int)fishes[i].y, (int)(fishW * fishes[i].scale), fh};
                 
-                // Застосовуємо колір і альфу (прозорість)
                 SDL_SetTextureColorMod(texFish, fishes[i].color.r, fishes[i].color.g, fishes[i].color.b);
                 SDL_SetTextureAlphaMod(texFish, fishes[i].alpha);
                 
                 SDL_RenderCopyEx(renderer, texFish, NULL, &r, fishes[i].angle, NULL, SDL_FLIP_NONE);
             }
 
-            // Текст заголовка
             renderText(fontTitle, "MUSKRAT", WIN_W/2 + 2, 102, (SDL_Color){0, 50, 100, 100});
             renderText(fontTitle, "MUSKRAT", WIN_W/2, 100, (SDL_Color){255, 255, 255, 255});
             
@@ -283,8 +324,8 @@ int main(int argc, char *argv[]) {
                  renderText(fontSmall, "- PRESS START -", WIN_W/2, WIN_H - 50, (SDL_Color){50, 80, 120, 255});
             }
         }
+        // малюєю карту
         else if (scene == 1) {
-            // Мапа
             SDL_SetTextureColorMod(texFish, 255, 255, 255);
             SDL_SetTextureAlphaMod(texFish, 255);
             SDL_RenderCopy(renderer, texMap, NULL, NULL);
@@ -295,8 +336,8 @@ int main(int argc, char *argv[]) {
                 renderText(fontSmall, buffer, zones[i].x, zones[i].y, (SDL_Color){255, 255, 255, 255});
             }
         }
+        // малюю таймер і кота
         else if (scene == 2) {
-            // Таймер
             Uint32 now = SDL_GetTicks();
             int elapsed = (now - timerStart) / 1000;
             int left = totalSeconds - elapsed;
@@ -315,7 +356,6 @@ int main(int argc, char *argv[]) {
                 }
             }
 
-            // Анімація
             if (now - lastBgTime > 100) {
                 bgFrame++;
                 if (bgFrame >= 6) {
@@ -325,20 +365,42 @@ int main(int argc, char *argv[]) {
                 }
                 lastBgTime = now;
             }
+
             if (now - lastCharTime > 150) {
                 charFrame = (charFrame + 1) % 4;
                 lastCharTime = now;
             }
 
-            int bw, bh;
-            SDL_QueryTexture(bgLayers[bgSheet], NULL, NULL, &bw, &bh);
-            SDL_Rect srcBg = {0, bgFrame * (bh / 6), bw, bh / 6};
-            SDL_RenderCopy(renderer, bgLayers[bgSheet], &srcBg, NULL);
+            // анімація вікна
+            if (isWindowOpen) {
+                winFrame = 5; 
+            } else {
+                winFrame = 0; 
+            }
 
-            int cw = catW / 4;
-            SDL_Rect srcCat = {charFrame * cw, 0, cw, catH};
-            SDL_Rect dstCat = {(WIN_W - cw)/2, (WIN_H - catH)/2 + 30, cw, catH};
-            SDL_RenderCopy(renderer, texCat, &srcCat, &dstCat);
+            int bw, bh;
+            if(bgLayers[bgSheet]) {
+                SDL_QueryTexture(bgLayers[bgSheet], NULL, NULL, &bw, &bh);
+                SDL_Rect srcBg = {0, bgFrame * (bh / 6), bw, bh / 6};
+                SDL_RenderCopy(renderer, bgLayers[bgSheet], &srcBg, NULL);
+            }
+
+            // малюю саме вікно
+            if (texWindow) {
+                int frameH = winH / 6;
+                if (frameH > 0) {
+                    SDL_Rect srcWin = {0, winFrame * frameH, winW, frameH};
+                    SDL_Rect dstWin = {WINDOW_POS_X, WINDOW_POS_Y, winW, frameH}; 
+                    SDL_RenderCopy(renderer, texWindow, &srcWin, &dstWin);
+                }
+            }
+
+            if(texCat) {
+                int cw = catW / 4;
+                SDL_Rect srcCat = {charFrame * cw, 0, cw, catH};
+                SDL_Rect dstCat = {(WIN_W - cw)/2, (WIN_H - catH)/2 + 30, cw, catH};
+                SDL_RenderCopy(renderer, texCat, &srcCat, &dstCat);
+            }
 
             char timeStr[16];
             if (left < 0) left = 0;
