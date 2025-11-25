@@ -10,10 +10,12 @@
 #define SCREEN_WIDTH 300
 #define SCREEN_HEIGHT 300
 
-#define GAME_DURATION_MS 10000   // 10 seconds
+#define GAME_DURATION_MS 15000   // 15 seconds
 #define BUTTON_WIDTH 64
 #define BUTTON_HEIGHT 64
-#define BUTTON_LIFETIME 800   
+#define BUTTON_LIFETIME 800
+#define EXIT_WIDTH 32
+#define EXIT_HEIGHT 32
 
 typedef enum {
     STATE_INSTRUCTION,
@@ -26,6 +28,7 @@ static GameState game_state = STATE_INSTRUCTION;
 static SDL_Texture *background_tex = NULL;
 static SDL_Texture *instruction_tex = NULL;
 static SDL_Texture *button_tex = NULL;
+static SDL_Texture *exit_tex = NULL;
 static SDL_Texture *rod_up_tex = NULL;
 static SDL_Texture *rod_down_tex = NULL;
 static SDL_Texture *win_tex = NULL;
@@ -34,9 +37,13 @@ static SDL_Texture *lose_tex = NULL;
 static int score = 0;
 static Uint32 game_start_time = 0;
 static bool game_running = false;
-static bool instruction_visible = true;
 static bool player_won = false;
 static bool player_lost = false;
+
+static int frame = 0;
+static Uint32 lastTime = 0; 
+static int frameWidth = 0;
+static int frameHeight = 0;
 
 typedef struct {
     SDL_Rect rect;
@@ -46,37 +53,48 @@ typedef struct {
 } Button;
 
 static Button fishButton = {0};
-
-void spawn_fish_button(SDL_Renderer *renderer);
-void show_end_screen(SDL_Renderer *renderer);
+static SDL_Rect exit_rect = { 8, 8, EXIT_WIDTH, EXIT_HEIGHT };
 
 static int rand_range(int min, int max) {
     if (max <= min) return min;
     return (rand() % (max - min + 1)) + min;
 }
 
+void reset_game(void) {
+    score = 0;
+    player_won = false;
+    player_lost = false;
+    game_running = false;
+    game_state = STATE_INSTRUCTION;
+    fishButton.isVisible = false;
+    fishButton.spawnTime = 0;
+}
+
 bool load_assets(SDL_Renderer *renderer) {
-
     background_tex = IMG_LoadTexture(renderer, "assets/FishingSea.png");
-
     instruction_tex = IMG_LoadTexture(renderer, "assets/FishInstruction.png");
-
     button_tex = IMG_LoadTexture(renderer, "assets/button.png");
-
+    exit_tex = IMG_LoadTexture(renderer, "assets/exit.png");
     rod_up_tex = IMG_LoadTexture(renderer, "assets/FishingRod_up.png");
-
     rod_down_tex = IMG_LoadTexture(renderer, "assets/FishingRod_down.png");
-
     win_tex = IMG_LoadTexture(renderer, "assets/FishingWin.png");
-
     lose_tex = rod_up_tex;
 
     fishButton.isVisible = false;
-    fishButton.texture = NULL;
+    fishButton.texture = button_tex;
     fishButton.rect.w = BUTTON_WIDTH;
     fishButton.rect.h = BUTTON_HEIGHT;
     fishButton.spawnTime = 0;
 
+    int w, h;
+    SDL_QueryTexture(instruction_tex, NULL, NULL, &w, &h);
+
+    frameWidth = w / 2;  
+    frameHeight = h;
+
+    frame = 0;
+    lastTime = SDL_GetTicks();
+    
     return true;
 }
 
@@ -84,25 +102,22 @@ void unload_assets(void) {
     if (background_tex) { SDL_DestroyTexture(background_tex); background_tex = NULL; }
     if (instruction_tex) { SDL_DestroyTexture(instruction_tex); instruction_tex = NULL; }
     if (button_tex) { SDL_DestroyTexture(button_tex); button_tex = NULL; }
+    if (exit_tex) { SDL_DestroyTexture(exit_tex); exit_tex = NULL; }
     if (rod_up_tex) { SDL_DestroyTexture(rod_up_tex); rod_up_tex = NULL; }
     if (rod_down_tex) { SDL_DestroyTexture(rod_down_tex); rod_down_tex = NULL; }
     if (win_tex) { SDL_DestroyTexture(win_tex); win_tex = NULL; }
 }
 
 void spawn_fish_button(SDL_Renderer *renderer) {
-    fishButton.texture = button_tex;
-
+    (void)renderer;
     int w = BUTTON_WIDTH;
     int h = BUTTON_HEIGHT;
-
     int x = rand_range(0, SCREEN_WIDTH - w);
     int y = rand_range(0, SCREEN_HEIGHT - h);
-
     fishButton.rect.x = x;
     fishButton.rect.y = y;
     fishButton.rect.w = w;
     fishButton.rect.h = h;
-
     fishButton.isVisible = true;
     fishButton.spawnTime = SDL_GetTicks();
 }
@@ -112,40 +127,27 @@ void hide_fish_button(void) {
     fishButton.spawnTime = 0;
 }
 
-void show_end_screen(SDL_Renderer *renderer) {
-
+bool show_end_screen(SDL_Renderer *renderer) {
+    SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, background_tex, NULL, NULL);
-
     SDL_Texture *end_tex = player_won ? win_tex : lose_tex;
     if (end_tex) {
         SDL_Rect full = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
         SDL_RenderCopy(renderer, end_tex, NULL, &full);
     }
-
     SDL_RenderPresent(renderer);
 
     SDL_Event e;
-    bool waiting = true;
-    while (waiting) {
+    while (1) {
         while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) { waiting = false; break; }
-            if (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN) { waiting = false; break; }
+            if (e.type == SDL_QUIT) return true;
+            if (e.type == SDL_KEYDOWN || e.type == SDL_MOUSEBUTTONDOWN) return false;
         }
         SDL_Delay(8);
     }
 }
 
 void handle_game_click(int mx, int my) {
-    if (game_state == STATE_INSTRUCTION) {
-        instruction_visible = false;
-        game_state = STATE_GAME;
-        game_running = true;
-        score = 0;
-        game_start_time = SDL_GetTicks();
-        spawn_fish_button(NULL);
-        return;
-    }
-
     if (game_state != STATE_GAME) return;
 
     if (fishButton.isVisible) {
@@ -162,17 +164,14 @@ void handle_game_click(int mx, int my) {
     }
 }
 
-void update_game(SDL_Renderer *renderer) {
+void update_game(void) {
     Uint32 now = SDL_GetTicks();
 
     if (game_state == STATE_GAME) {
         if (game_running && (now - game_start_time >= GAME_DURATION_MS)) {
             game_running = false;
-            if (score >= 10) {
-                player_won = true;
-            } else {
-                player_lost = true;
-            }
+            if (score >= 10) player_won = true;
+            else player_lost = true;
             game_state = STATE_END;
             return;
         }
@@ -186,39 +185,46 @@ void update_game(SDL_Renderer *renderer) {
         }
 
         if (game_running && !fishButton.isVisible) {
-            spawn_fish_button(renderer);
+            spawn_fish_button(NULL);
         }
     }
 }
 
 void render_game(SDL_Renderer *renderer) {
     SDL_RenderClear(renderer);
-
     SDL_RenderCopy(renderer, background_tex, NULL, NULL);
 
     SDL_Rect rod_rect = {0, 0, SCREEN_WIDTH, SCREEN_HEIGHT};
-
-    if (game_state == STATE_INSTRUCTION || game_state == STATE_END)
-    {
+    if (game_state == STATE_INSTRUCTION || game_state == STATE_END) {
         SDL_RenderCopy(renderer, rod_up_tex, NULL, &rod_rect);
-    }
-    else if (game_state == STATE_GAME)
-    {
+    } else if (game_state == STATE_GAME) {
         SDL_RenderCopy(renderer, rod_down_tex, NULL, &rod_rect);
     }
 
     if (game_state == STATE_INSTRUCTION) {
-        SDL_Rect r = { (SCREEN_WIDTH - 240) / 2, (SCREEN_HEIGHT - 160) / 2, 240, 160 };
-        SDL_RenderCopy(renderer, instruction_tex, NULL, &r);
-        SDL_RenderPresent(renderer);
-        return;
+
+       Uint32 now = SDL_GetTicks();
+    if (now - lastTime >= 400) { //0.4 sec
+        frame = (frame + 1) % 2;
+        lastTime = now;
+    }
+
+    SDL_Rect src = { frame * frameWidth, 0, frameWidth, frameHeight };
+
+    SDL_Rect dst = {
+        (SCREEN_WIDTH - 250) / 2, (SCREEN_HEIGHT - 250) / 2, 250, 250
+    };
+
+    SDL_RenderCopy(renderer, instruction_tex, &src, &dst);
+    SDL_RenderCopy(renderer, exit_tex, NULL, &exit_rect);
+    SDL_RenderPresent(renderer);
+    return;
     }
 
     if (game_state == STATE_GAME) {
         if (fishButton.isVisible && fishButton.texture) {
             SDL_RenderCopy(renderer, fishButton.texture, NULL, &fishButton.rect);
         }
-
         SDL_RenderPresent(renderer);
         return;
     }
@@ -228,7 +234,6 @@ void render_game(SDL_Renderer *renderer) {
         return;
     }
 }
-
 
 int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
@@ -271,51 +276,60 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    reset_game();
+
     SDL_Event e;
     bool running = true;
 
     while (running) {
-
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) { running = false; break; }
+
             if (e.type == SDL_KEYDOWN) {
                 if (e.key.keysym.sym == SDLK_ESCAPE) { running = false; break; }
+
                 if (game_state == STATE_INSTRUCTION) {
-              
-                    instruction_visible = false;
                     game_state = STATE_GAME;
                     game_running = true;
                     score = 0;
                     game_start_time = SDL_GetTicks();
                     spawn_fish_button(renderer);
+                } else if (game_state == STATE_END) {
+                    reset_game();
                 }
             }
+
             if (e.type == SDL_MOUSEBUTTONDOWN) {
                 int mx = e.button.x;
                 int my = e.button.y;
+
                 if (game_state == STATE_INSTRUCTION) {
-                    instruction_visible = false;
-                    game_state = STATE_GAME;
-                    game_running = true;
-                    score = 0;
-                    game_start_time = SDL_GetTicks();
-                    spawn_fish_button(renderer);
+                    if (mx >= exit_rect.x && mx <= exit_rect.x + exit_rect.w &&
+                        my >= exit_rect.y && my <= exit_rect.y + exit_rect.h) {
+                        running = false;
+                    } else {
+                        game_state = STATE_GAME;
+                        game_running = true;
+                        score = 0;
+                        game_start_time = SDL_GetTicks();
+                        spawn_fish_button(renderer);
+                    }
                 } else if (game_state == STATE_GAME) {
                     handle_game_click(mx, my);
                 } else if (game_state == STATE_END) {
-              
-                    running = false;
+                    reset_game();
                 }
             }
         }
 
-        update_game(renderer);
+        update_game();
 
         render_game(renderer);
 
         if (game_state == STATE_END) {
-            show_end_screen(renderer);
-            break;
+            bool quit = show_end_screen(renderer);
+            if (quit) running = false;
+            else reset_game();
         }
 
         SDL_Delay(16); // ~60 FPS
