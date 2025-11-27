@@ -1,0 +1,31 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build SDL2 Project",
+      "type": "shell",
+      "command": "gcc",
+      "args": [
+        "Main_Screen.c", 
+        "-IC:/SDL2/SDL2-2.30.11/x86_64-w64-mingw32/include/SDL2",
+        "-IC:/SDL2_image/SDL2_image-2.8.2/x86_64-w64-mingw32/include/SDL2",
+        "-IC:/SDL2_ttf/SDL2_ttf-2.24.0/x86_64-w64-mingw32/include/SDL2",
+        "-LC:/SDL2/SDL2-2.30.11/x86_64-w64-mingw32/lib",
+        "-LC:/SDL2_image/SDL2_image-2.8.2/x86_64-w64-mingw32/lib",
+        "-LC:/SDL2_ttf/SDL2_ttf-2.24.0/x86_64-w64-mingw32/lib",
+        "-lmingw32",
+        "-lSDL2main",
+        "-lSDL2",
+        "-lSDL2_image",
+        "-lSDL2_ttf",
+        "-o",
+        "Main_Screen.exe"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$gcc"]
+    }
+  ]
+}
